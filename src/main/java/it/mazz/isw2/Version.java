@@ -1,9 +1,10 @@
-package it.mazz.isw2.falessi;
+package it.mazz.isw2;
 
 import java.util.Date;
 
 public class Version {
     private Integer id;
+    private Integer incremental;
     private String name;
     private boolean archived;
     private boolean released;
@@ -11,8 +12,9 @@ public class Version {
 
     private String commit;
 
-    public Version(Integer id, String name, boolean archived, boolean released, Date releaseDate) {
+    public Version(Integer id, Integer incremental, String name, boolean archived, boolean released, Date releaseDate) {
         this.id = id;
+        this.incremental = incremental;
         this.name = name;
         this.archived = archived;
         this.released = released;
@@ -25,6 +27,14 @@ public class Version {
 
     public void setId(Integer id) {
         this.id = id;
+    }
+
+    public Integer getIncremental() {
+        return incremental;
+    }
+
+    public void setIncremental(Integer incremental) {
+        this.incremental = incremental;
     }
 
     public String getName() {

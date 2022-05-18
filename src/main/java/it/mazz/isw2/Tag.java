@@ -1,4 +1,4 @@
-package it.mazz.isw2.falessi;
+package it.mazz.isw2;
 
 import java.util.Date;
 
