@@ -4,14 +4,13 @@ import java.util.Date;
 
 public class Tag {
 
+    private final String sha;
     private String name;
-    private String commitID;
-
     private Date date;
 
-    public Tag(String name, String commitID) {
+    public Tag(String name, String sha) {
         this.name = name;
-        this.commitID = commitID;
+        this.sha = sha;
     }
 
     public String getName() {
@@ -22,12 +21,8 @@ public class Tag {
         this.name = name;
     }
 
-    public String getCommitID() {
-        return commitID;
-    }
-
-    public void setCommitID(String commitID) {
-        this.commitID = commitID;
+    public String getSha() {
+        return sha;
     }
 
     public Date getDate() {

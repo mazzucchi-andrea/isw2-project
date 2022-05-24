@@ -3,20 +3,18 @@ package it.mazz.isw2;
 import java.util.Date;
 
 public class Version {
+    private final Integer incremental;
     private Integer id;
-    private Integer incremental;
     private String name;
-    private boolean archived;
     private boolean released;
     private Date releaseDate;
 
     private String commit;
 
-    public Version(Integer id, Integer incremental, String name, boolean archived, boolean released, Date releaseDate) {
+    public Version(Integer id, Integer incremental, String name, boolean released, Date releaseDate) {
         this.id = id;
         this.incremental = incremental;
         this.name = name;
-        this.archived = archived;
         this.released = released;
         this.releaseDate = releaseDate;
     }
@@ -33,24 +31,12 @@ public class Version {
         return incremental;
     }
 
-    public void setIncremental(Integer incremental) {
-        this.incremental = incremental;
-    }
-
     public String getName() {
         return name;
     }
 
     public void setName(String name) {
         this.name = name;
-    }
-
-    public boolean isArchived() {
-        return archived;
-    }
-
-    public void setArchived(boolean archived) {
-        this.archived = archived;
     }
 
     public boolean isReleased() {

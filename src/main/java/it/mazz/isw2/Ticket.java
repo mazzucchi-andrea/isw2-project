@@ -13,7 +13,6 @@ public class Ticket {
     private Date created;
     private Date resolved;
     private List<Commit> commits = new LinkedList<>();
-    private final List<String> affectedFiles = new LinkedList<>();
 
     public String getKey() {
         return key;
@@ -30,15 +29,21 @@ public class Ticket {
     public void setOpeningVersion(List<Version> versions) {
         if (this.affectedVersions.size() > 1) {
             for (int i = this.affectedVersions.size() - 1; i >= 0; i--) {
-                if (this.created.compareTo(this.affectedVersions.get(i).getReleaseDate()) > 0) {
+                if (this.affectedVersions.get(i).getReleaseDate() != null &&
+                        this.created.getTime() > this.affectedVersions.get(i).getReleaseDate().getTime()) {
                     this.openingVersion = this.affectedVersions.get(i);
                     break;
                 }
             }
-        } else {
+        } else if (openingVersion == null) {
+            this.affectedVersions = new LinkedList<>();
             for (int j = 0; j < versions.size(); j++) {
-                if (this.created.compareTo(versions.get(j).getReleaseDate()) > 0) {
-                    this.openingVersion = versions.get(j - 1);
+                if (versions.get(j).getReleaseDate() != null &&
+                        j + 1 < versions.size() &&
+                        versions.get(j + 1).getReleaseDate() != null &&
+                        this.created.getTime() > versions.get(j).getReleaseDate().getTime() &&
+                        this.created.getTime() < versions.get(j + 1).getReleaseDate().getTime()) {
+                    this.openingVersion = versions.get(j);
                     break;
                 }
             }
@@ -97,19 +102,16 @@ public class Ticket {
         this.commits.add(commit);
     }
 
-    public List<String> getAffectedFiles() {
-        return affectedFiles;
-    }
-
-    public void addAffectedFiles(List<String> fixedFiles) {
-        this.affectedFiles.addAll(fixedFiles);
-    }
-
     public boolean consistencyCheckAffectedVersion() {
         if (affectedVersions.isEmpty()) {
             return false;
         } else if (fixedVersions.isEmpty()) {
             return false;
-        } else return affectedVersions.get(affectedVersions.size() - 1).getIncremental() <= fixedVersions.get(0).getIncremental();
+        } else
+            return affectedVersions.get(affectedVersions.size() - 1).getIncremental() <= fixedVersions.get(0).getIncremental();
+    }
+
+    public void addAffectedVersions(Version version) {
+        this.affectedVersions.add(version);
     }
 }

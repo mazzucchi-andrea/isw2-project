@@ -3,9 +3,12 @@ package it.mazz.isw2;
 import kong.unirest.HttpResponse;
 import kong.unirest.JsonNode;
 import kong.unirest.Unirest;
+import kong.unirest.UnirestException;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.text.ParseException;
@@ -14,6 +17,7 @@ import java.util.List;
 
 public class Util {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(Util.class);
     private static Util instance = null;
     private String username;
     private String token;
@@ -38,26 +42,31 @@ public class Util {
     public Commit getCommit(String sha) {
         Commit commit = new Commit();
 
-        JSONObject jsonObject = readJsonFromUrl("https://api.github.com/repos/apache/openjpa/commits/" + sha, true);
-
-        JSONObject jsonObjectAuthor;
-        try {
-            jsonObjectAuthor = jsonObject.getJSONObject("author");
-        } catch (JSONException e) {
+        JSONObject jsonObject = null;
+        while (jsonObject == null) {
             try {
-                jsonObjectAuthor = jsonObject.getJSONObject("committer");
-            } catch (JSONException je) {
-                jsonObjectAuthor = new JSONObject("{\"login\":\"unknown\", \"id\":99999}");
+                jsonObject = readJsonFromUrl("https://api.github.com/repos/apache/openjpa/commits/" + sha, true);
+            } catch (UnirestException e) {
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                }
             }
         }
-        commit.setAuthor(jsonObjectAuthor.getString("login"));
-        commit.setAuthorId(jsonObjectAuthor.getInt("id"));
+
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+            Thread.currentThread().interrupt();
+        }
 
         try {
             commit.setMessage(jsonObject.getJSONObject("commit").getString("message"));
         } catch (JSONException e) {
             e.printStackTrace();
-            System.out.println(jsonObject.toString(2));
+            LOGGER.error(jsonObject.toString(2));
             return null;
         }
 
@@ -66,6 +75,7 @@ public class Util {
             commit.setDate(sdf.parse(jsonObject.getJSONObject("commit").getJSONObject("author").getString("date")));
         } catch (ParseException e) {
             e.printStackTrace();
+            return null;
         }
 
         JSONArray jsonArrayFiles = jsonObject.getJSONArray("files");
