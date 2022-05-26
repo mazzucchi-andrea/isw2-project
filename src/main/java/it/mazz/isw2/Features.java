@@ -1,20 +1,10 @@
 package it.mazz.isw2;
 
-import org.eclipse.jgit.api.Git;
-import org.eclipse.jgit.api.errors.GitAPIException;
-import org.eclipse.jgit.diff.DiffEntry;
-import org.eclipse.jgit.lib.*;
-import org.eclipse.jgit.revwalk.RevCommit;
-import org.eclipse.jgit.revwalk.RevTree;
-import org.eclipse.jgit.revwalk.RevWalk;
-import org.eclipse.jgit.treewalk.AbstractTreeIterator;
-import org.eclipse.jgit.treewalk.CanonicalTreeParser;
-
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
-import java.util.*;
+import java.util.List;
 
 public class Features {
     private final Integer version;
@@ -53,84 +43,6 @@ public class Features {
         this.maxChgSet = 0;
         this.avgChgSet = 0D;
         this.buggy = "no";
-    }
-
-    private static List<String> listDiff(Repository repository, Git git, String oldCommit, String newCommit) throws GitAPIException, IOException {
-        List<String> files = new LinkedList<>();
-        final List<DiffEntry> diffs = git.diff()
-                .setOldTree(prepareTreeParser(repository, oldCommit))
-                .setNewTree(prepareTreeParser(repository, newCommit))
-                .call();
-        for (DiffEntry diff : diffs)
-            files.add(diff.getNewPath());
-
-        return files;
-    }
-
-    private static AbstractTreeIterator prepareTreeParser(Repository repository, String objectId) throws IOException {
-        // from the commit we can build the tree which allows us to construct the TreeParser
-        //noinspection Duplicates
-        try (RevWalk walk = new RevWalk(repository)) {
-            RevCommit commit = walk.parseCommit(repository.resolve(objectId));
-            RevTree tree = walk.parseTree(commit.getTree().getId());
-
-            CanonicalTreeParser treeParser = new CanonicalTreeParser();
-            try (ObjectReader reader = repository.newObjectReader()) {
-                treeParser.reset(reader, tree.getId());
-            }
-
-            walk.dispose();
-
-            return treeParser;
-        }
-    }
-
-    public void calculateFeaturesByCommits(Git git, String path, Long currVersionReleaseDate, Long prevVersionReleaseDate) {
-        Set<PersonIdent> authorsList = new HashSet<>();
-        Collection<Ref> allRefs;
-        Repository repository = git.getRepository();
-        try {
-            allRefs = repository.getRefDatabase().getRefs();
-        } catch (IOException e) {
-            e.printStackTrace();
-            return;
-        }
-        try (RevWalk revWalk = new RevWalk(repository)) {
-            for (Ref ref : allRefs) {
-                revWalk.markStart(revWalk.parseCommit(ref.getObjectId()));
-            }
-            for (RevCommit revCommit : revWalk) {
-                Long commitDate = revCommit.getCommitTime() * 1000L;
-                if (currVersionReleaseDate > commitDate) continue;
-                boolean isValidCommit = isFileInCommit(repository, git, revCommit.getName(), path);
-                if (isValidCommit) authorsList.add(revCommit.getAuthorIdent());
-                if (isValidCommit && prevVersionReleaseDate < commitDate) {
-                    Commit commit = Util.getInstance().getCommit(revCommit.getName());
-                    FileStat fileStat = commit.getFileStat(path);
-                    if (fileStat != null) {
-                        this.locTouched += fileStat.getLocAdded();
-                        this.locTouched += fileStat.getLocDeleted();
-                        this.locTouched += fileStat.getLocModified();
-                        this.locAdded += fileStat.getLocAdded();
-                        this.churn += (fileStat.getLocAdded() - fileStat.getLocDeleted());
-                        this.revisions++;
-                        this.chgSetSize += commit.getFileStatList().size();
-                        if (commit.getFileStatList().size() > this.maxChgSet)
-                            this.maxChgSet = commit.getFileStatList().size();
-                        if (fileStat.getLocAdded() > this.maxLocAdded)
-                            this.maxLocAdded = fileStat.getLocAdded();
-                        if ((fileStat.getLocAdded() - fileStat.getLocDeleted()) > this.maxChurn)
-                            this.maxChurn = (fileStat.getLocAdded() - fileStat.getLocDeleted());
-                    }
-                }
-            }
-            this.authors = authorsList.size();
-            this.avgLocAdded = ((double) this.locAdded / (double) this.revisions);
-            this.avgChurn = ((double) this.churn / (double) this.revisions);
-            this.avgChgSet = ((double) this.chgSetSize / (double) this.revisions);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
     }
 
     //Count physical LOC (no comments/blanks)
@@ -207,26 +119,72 @@ public class Features {
                 buggy};
     }
 
-    private boolean isFileInCommit(Repository repository, Git git, String sha, String path) {
-        ObjectId objectIdCommit;
-        try {
-            objectIdCommit = repository.resolve(sha);
-        } catch (IOException e) {
-            e.printStackTrace();
-            return false;
-        }
-        try (RevWalk revWalk = new RevWalk(repository)) {
-            RevCommit child = revWalk.parseCommit(objectIdCommit);
-            RevCommit parent;
-            parent = child.getParent(0);
-            List<String> files = listDiff(repository, git, parent.getName(), child.getName());
-            for (String f : files) {
-                if (f.equals(path))
-                    return true;
-            }
-        } catch (IOException | GitAPIException | ArrayIndexOutOfBoundsException e) {
-            return false;
-        }
-        return false;
+    public void addLocTouched(int locTouched) {
+        this.locTouched += locTouched;
     }
+
+    public Integer getLocAdded() {
+        return locAdded;
+    }
+
+    public void addLocAdded(int locAdded) {
+        this.locAdded += locAdded;
+    }
+
+    public Integer getChurn() {
+        return churn;
+    }
+
+    public void addChurn(int churn) {
+        this.churn += churn;
+    }
+
+    public Integer getRevisions() {
+        return revisions;
+    }
+
+    public void incrementRevisions() {
+        this.revisions++;
+    }
+
+    public Integer getChgSetSize() {
+        return chgSetSize;
+    }
+
+    public void addChgSetSize(int filesChanged) {
+        this.chgSetSize += filesChanged;
+    }
+
+    public void setMaxChgSet(Integer chgSetSize) {
+        if (this.maxChgSet < chgSetSize)
+            this.maxChgSet = chgSetSize;
+    }
+
+    public void setMaxLocAdded(Integer locAdded) {
+        if (this.maxLocAdded < locAdded)
+            this.maxLocAdded = locAdded;
+    }
+
+    public void setMaxChurn(Integer churn) {
+        if (this.maxChurn < churn)
+            this.maxChurn = churn;
+    }
+
+    public void setAuthors(Integer authors) {
+        this.authors = authors;
+    }
+
+    public void setAvgLocAdded(Double avgLocAdded) {
+        this.avgLocAdded = avgLocAdded;
+    }
+
+    public void setAvgChurn(Double avgChurn) {
+        this.avgChurn = avgChurn;
+    }
+
+    public void setAvgChgSet(Double avgChgSet) {
+        this.avgChgSet = avgChgSet;
+    }
+
+
 }

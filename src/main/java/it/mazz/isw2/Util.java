@@ -3,21 +3,31 @@ package it.mazz.isw2;
 import kong.unirest.HttpResponse;
 import kong.unirest.JsonNode;
 import kong.unirest.Unirest;
-import kong.unirest.UnirestException;
+import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.api.errors.GitAPIException;
+import org.eclipse.jgit.diff.DiffEntry;
+import org.eclipse.jgit.lib.ObjectId;
+import org.eclipse.jgit.lib.ObjectReader;
+import org.eclipse.jgit.lib.Ref;
+import org.eclipse.jgit.lib.Repository;
+import org.eclipse.jgit.revwalk.RevCommit;
+import org.eclipse.jgit.revwalk.RevTree;
+import org.eclipse.jgit.revwalk.RevWalk;
+import org.eclipse.jgit.treewalk.AbstractTreeIterator;
+import org.eclipse.jgit.treewalk.CanonicalTreeParser;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
+import java.io.IOException;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedList;
 import java.util.List;
 
 public class Util {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(Util.class);
     private static Util instance = null;
     private String username;
     private String token;
@@ -39,60 +49,7 @@ public class Util {
         this.token = token;
     }
 
-    public Commit getCommit(String sha) {
-        Commit commit = new Commit();
-
-        JSONObject jsonObject = null;
-        while (jsonObject == null) {
-            try {
-                jsonObject = readJsonFromUrl("https://api.github.com/repos/apache/openjpa/commits/" + sha, true);
-            } catch (UnirestException e) {
-                try {
-                    Thread.sleep(1000);
-                } catch (InterruptedException ex) {
-                    Thread.currentThread().interrupt();
-                }
-            }
-        }
-
-        try {
-            Thread.sleep(1000);
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-            Thread.currentThread().interrupt();
-        }
-
-        try {
-            commit.setMessage(jsonObject.getJSONObject("commit").getString("message"));
-        } catch (JSONException e) {
-            e.printStackTrace();
-            LOGGER.error(jsonObject.toString(2));
-            return null;
-        }
-
-        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
-        try {
-            commit.setDate(sdf.parse(jsonObject.getJSONObject("commit").getJSONObject("author").getString("date")));
-        } catch (ParseException e) {
-            e.printStackTrace();
-            return null;
-        }
-
-        JSONArray jsonArrayFiles = jsonObject.getJSONArray("files");
-        for (int i = 0; i < jsonArrayFiles.length(); i++) {
-            JSONObject jsonFile = jsonArrayFiles.getJSONObject(i);
-            FileStat fileStat = new FileStat();
-            fileStat.setFilePath(jsonFile.getString("filename"));
-            fileStat.setLocAdded(jsonFile.getInt("additions"));
-            fileStat.setLocDeleted(jsonFile.getInt("deletions"));
-            fileStat.setLocModified(jsonFile.getInt("changes"));
-            commit.addFileStat(fileStat);
-        }
-
-        return commit;
-    }
-
-    public void listf(String directoryName, List<File> files) {
+    public void listFiles(String directoryName, List<File> files) {
         File directory = new File(directoryName);
 
         // Get all files from a directory.
@@ -102,7 +59,7 @@ public class Util {
                 if (file.isFile()) {
                     files.add(file);
                 } else if (file.isDirectory()) {
-                    listf(file.getAbsolutePath(), files);
+                    listFiles(file.getAbsolutePath(), files);
                 }
             }
     }
@@ -125,5 +82,104 @@ public class Util {
             resp = Unirest.get(url).asJson();
         }
         return new JSONArray(resp.getBody().toString());
+    }
+
+    public RevWalk getRevWalkForAllCommits(Repository repository) {
+        Collection<Ref> allRefs;
+        try {
+            allRefs = repository.getRefDatabase().getRefs();
+        } catch (IOException e) {
+            e.printStackTrace();
+            return null;
+        }
+        try (RevWalk revWalk = new RevWalk(repository)) {
+            for (Ref ref : allRefs) {
+                revWalk.markStart(revWalk.parseCommit(ref.getObjectId()));
+            }
+            return revWalk;
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    private List<String> listDiff(Repository repository, Git git, String oldCommit, String newCommit) throws GitAPIException, IOException {
+        List<String> files = new LinkedList<>();
+        final List<DiffEntry> diffs = git.diff()
+                .setOldTree(prepareTreeParser(repository, oldCommit))
+                .setNewTree(prepareTreeParser(repository, newCommit))
+                .call();
+        for (DiffEntry diff : diffs)
+            files.add(diff.getNewPath());
+
+        return files;
+    }
+
+    private AbstractTreeIterator prepareTreeParser(Repository repository, String objectId) throws IOException {
+        // from the commit we can build the tree which allows us to construct the TreeParser
+        //noinspection Duplicates
+        try (RevWalk walk = new RevWalk(repository)) {
+            RevCommit commit = walk.parseCommit(repository.resolve(objectId));
+            RevTree tree = walk.parseTree(commit.getTree().getId());
+
+            CanonicalTreeParser treeParser = new CanonicalTreeParser();
+            try (ObjectReader reader = repository.newObjectReader()) {
+                treeParser.reset(reader, tree.getId());
+            }
+
+            walk.dispose();
+
+            return treeParser;
+        }
+    }
+
+    public List<String> getCommitFiles(Repository repository, Git git, String sha) {
+        ObjectId objectIdCommit = null;
+        try {
+            objectIdCommit = repository.resolve(sha);
+        } catch (IOException e) {
+            e.printStackTrace();
+
+        }
+        try (RevWalk revWalk = new RevWalk(repository)) {
+            RevCommit child = revWalk.parseCommit(objectIdCommit);
+            RevCommit parent = getParent(child, repository);
+
+            return listDiff(repository, git, parent.getName(), child.getName());
+        } catch (IOException | GitAPIException e) {
+            return Collections.emptyList();
+        }
+
+    }
+
+    public RevCommit getRevCommit(String sha, Repository repository) throws IOException {
+        ObjectId objectId = repository.resolve(sha);
+        if (objectId != null) {
+            try (RevWalk revWalk = new RevWalk(repository)) {
+                return revWalk.parseCommit(objectId);
+            }
+        }
+        return null;
+    }
+
+    public RevCommit getParent(RevCommit child, Repository repository) throws IOException {
+        RevCommit parent;
+        try {
+            parent = child.getParent(0);
+        } catch (ArrayIndexOutOfBoundsException e) {
+            try (RevWalk revWalk = new RevWalk(repository)) {
+                parent = revWalk.parseCommit(repository.resolve("4b825dc642cb6eb9a060e54bf8d69288fbee4904"));
+            }
+        }
+        return parent;
+    }
+
+    public Commit createCommit(RevCommit revCommit, Repository repository, Git git) {
+        List<String> files = getCommitFiles(repository, git, revCommit.getName());
+        return new Commit(
+                revCommit.getName(),
+                revCommit.getCommitterIdent().getWhen(),
+                revCommit.getCommitterIdent(),
+                revCommit.getFullMessage(),
+                files);
     }
 }

@@ -1,14 +1,41 @@
 package it.mazz.isw2;
 
+import org.eclipse.jgit.lib.PersonIdent;
+
 import java.util.Date;
-import java.util.LinkedList;
 import java.util.List;
 
 public class Commit {
 
-    private final List<FileStat> fileStatList = new LinkedList<>();
+    private final List<String> files;
+    private String sha;
+    private PersonIdent author;
     private Date date;
     private String message;
+
+    public Commit(String sha, Date date, PersonIdent committerIdent, String fullMessage, List<String> files) {
+        this.sha = sha;
+        this.date = date;
+        this.author = committerIdent;
+        this.message = fullMessage;
+        this.files = files;
+    }
+
+    public String getSha() {
+        return sha;
+    }
+
+    public void setSha(String sha) {
+        this.sha = sha;
+    }
+
+    public PersonIdent getAuthor() {
+        return author;
+    }
+
+    public void setAuthor(PersonIdent author) {
+        this.author = author;
+    }
 
     public Date getDate() {
         return date;
@@ -26,34 +53,20 @@ public class Commit {
         this.message = message;
     }
 
-    public List<FileStat> getFileStatList() {
-        return fileStatList;
-    }
-
-    public void addFileStat(FileStat fileStat) {
-        this.fileStatList.add(fileStat);
+    public List<String> getFiles() {
+        return files;
     }
 
     public boolean javaFileInCommit() {
-        for (FileStat fileStat : fileStatList) {
-            if (fileStat.getFilePath().contains(".java"))
-                return true;
+        for (String path : this.files) {
+            if (path.contains(".java")) return true;
         }
         return false;
     }
 
-    public FileStat getFileStat(String path) {
-        for (FileStat fileStat : fileStatList) {
-            if (fileStat.getFilePath().equals(path))
-                return fileStat;
-        }
-        return null;
-    }
-
     public boolean isFileInCommit(String path) {
-        for (FileStat fileStat : fileStatList) {
-            if (fileStat.getFilePath().equals(path))
-                return true;
+        for (String s : this.files) {
+            if (s.equals(path)) return true;
         }
         return false;
     }
