@@ -1,4 +1,4 @@
-package it.mazz.isw2;
+package it.mazz.isw2.entities;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -8,7 +8,8 @@ import java.util.List;
 
 public class Features {
     private final Integer version;
-    private final String fileName;
+
+    private final String filename;
     private Integer loc;
     private Integer locTouched;
     private Integer revisions;
@@ -25,9 +26,9 @@ public class Features {
     private Double avgChgSet;
     private String buggy;
 
-    public Features(Integer version, String fileName) {
+    public Features(Integer version, String filename) {
         this.version = version;
-        this.fileName = fileName;
+        this.filename = filename;
         this.loc = 0;
         this.locTouched = 0;
         this.revisions = 0;
@@ -43,6 +44,10 @@ public class Features {
         this.maxChgSet = 0;
         this.avgChgSet = 0D;
         this.buggy = "no";
+    }
+
+    public Integer getVersion() {
+        return version;
     }
 
     //Count physical LOC (no comments/blanks)
@@ -98,10 +103,29 @@ public class Features {
         this.buggy = "no";
     }
 
-    public String[] toStringArray() {
+    public String[] toStringArrayForArff() {
+        return new String[]{
+                loc.toString(),
+                locTouched.toString(),
+                revisions.toString(),
+                fixes.toString(),
+                authors.toString(),
+                locAdded.toString(),
+                maxLocAdded.toString(),
+                avgLocAdded.toString(),
+                churn.toString(),
+                maxChurn.toString(),
+                avgChurn.toString(),
+                chgSetSize.toString(),
+                maxChgSet.toString(),
+                avgChgSet.toString(),
+                buggy};
+    }
+
+    public String[] toStringArrayForCSV() {
         return new String[]{
                 version.toString(),
-                fileName,
+                filename,
                 loc.toString(),
                 locTouched.toString(),
                 revisions.toString(),
@@ -185,6 +209,5 @@ public class Features {
     public void setAvgChgSet(Double avgChgSet) {
         this.avgChgSet = avgChgSet;
     }
-
 
 }

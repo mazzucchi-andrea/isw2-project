@@ -1,4 +1,4 @@
-package it.mazz.isw2;
+package it.mazz.isw2.entities;
 
 import java.util.Date;
 
@@ -62,4 +62,5 @@ public class Version {
     public void setCommit(String commit) {
         this.commit = commit;
     }
+
 }

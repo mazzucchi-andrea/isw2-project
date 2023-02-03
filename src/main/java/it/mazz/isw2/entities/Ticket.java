@@ -1,4 +1,4 @@
-package it.mazz.isw2;
+package it.mazz.isw2.entities;
 
 import java.util.Date;
 import java.util.LinkedList;
@@ -114,4 +114,5 @@ public class Ticket {
     public void addAffectedVersions(Version version) {
         this.affectedVersions.add(version);
     }
+
 }

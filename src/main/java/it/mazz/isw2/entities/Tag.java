@@ -1,4 +1,4 @@
-package it.mazz.isw2;
+package it.mazz.isw2.entities;
 
 import java.util.Date;
 
@@ -32,4 +32,5 @@ public class Tag {
     public void setDate(Date date) {
         this.date = date;
     }
+
 }

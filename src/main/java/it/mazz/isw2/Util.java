@@ -1,5 +1,6 @@
 package it.mazz.isw2;
 
+import it.mazz.isw2.entities.Commit;
 import kong.unirest.HttpResponse;
 import kong.unirest.JsonNode;
 import kong.unirest.Unirest;
@@ -182,4 +183,5 @@ public class Util {
                 revCommit.getFullMessage(),
                 files);
     }
+
 }

@@ -1,4 +1,4 @@
-package it.mazz.isw2;
+package it.mazz.isw2.entities;
 
 import org.eclipse.jgit.lib.PersonIdent;
 
@@ -8,7 +8,7 @@ import java.util.List;
 public class Commit {
 
     private final List<String> files;
-    private String sha;
+    private final String sha;
     private PersonIdent author;
     private Date date;
     private String message;
@@ -23,10 +23,6 @@ public class Commit {
 
     public String getSha() {
         return sha;
-    }
-
-    public void setSha(String sha) {
-        this.sha = sha;
     }
 
     public PersonIdent getAuthor() {
@@ -70,4 +66,5 @@ public class Commit {
         }
         return false;
     }
+
 }
