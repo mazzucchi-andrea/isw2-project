@@ -171,10 +171,10 @@ public class Analysis {
             int numAttr = training.numAttributes();
 
             AttributeStats buggedTrainingStats = training.attributeStats(numAttr - 1);
-            double percDefectiveTraining = buggedTrainingStats.nominalWeights[0] / buggedTrainingStats.totalCount;
+            double percDefectiveTraining = ((double) buggedTrainingStats.nominalCounts[1] / buggedTrainingStats.totalCount) * 100;
 
             AttributeStats buggedTestingStats = testing.attributeStats(numAttr - 1);
-            double percDefectiveTesting = buggedTestingStats.nominalWeights[0] / buggedTestingStats.totalCount;
+            double percDefectiveTesting = ((double) buggedTestingStats.nominalCounts[1] / buggedTestingStats.totalCount) * 100;
 
             training.setClassIndex(numAttr - 1);
             testing.setClassIndex(numAttr - 1);

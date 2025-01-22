@@ -1,7 +1,10 @@
 package it.mazz.isw2;
 
 import com.opencsv.CSVWriter;
-import it.mazz.isw2.entities.*;
+import it.mazz.isw2.entities.Commit;
+import it.mazz.isw2.entities.Features;
+import it.mazz.isw2.entities.Ticket;
+import it.mazz.isw2.entities.Version;
 import org.apache.commons.io.FileUtils;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
@@ -9,15 +12,14 @@ import org.eclipse.jgit.diff.DiffEntry;
 import org.eclipse.jgit.diff.DiffFormatter;
 import org.eclipse.jgit.diff.Edit;
 import org.eclipse.jgit.diff.RawTextComparator;
-import org.eclipse.jgit.errors.MissingObjectException;
 import org.eclipse.jgit.lib.ObjectId;
 import org.eclipse.jgit.lib.PersonIdent;
+import org.eclipse.jgit.lib.Ref;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.util.io.DisabledOutputStream;
 import org.json.JSONArray;
-import org.json.JSONException;
 import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,7 +32,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.time.Instant;
 import java.util.*;
 import java.util.regex.Pattern;
 
@@ -51,11 +52,8 @@ public class DatasetGenerator {
         return instance;
     }
 
-    public void generateDataset(String projName, String username, String token) {
+    public void generateDataset(String projName) {
         LOGGER.info("Project: {}", projName);
-
-        util.setUsername(username);
-        util.setToken(token);
 
         LOGGER.info("Delete old local repository");
         File repo = checkAndDeleteLocalRepo(projName);
@@ -71,23 +69,17 @@ public class DatasetGenerator {
             return;
         }
 
-        LOGGER.info("Retrieve versions tags from GitHub");
-        List<Tag> gitHubTags = getGitHubTags(projName);
-        LOGGER.info("GitHub version tags list size {}", gitHubTags.size());
-
         LOGGER.info("Retrieve Versions from Jira");
         List<Version> versions = getJiraVersions(projName);
         LOGGER.info("Version list size: {}", versions.size());
 
-        LOGGER.info("Merge GitHub tags, Jira Versions and ref/tags to take commits and missing release date");
-        getReleaseCommit(versions, gitHubTags, git);
-
+        LOGGER.info("Merge Jira Versions and ref/tags to take commits");
+        getReleaseCommit(versions, git);
 
         List<Commit> commits;
         try (Repository repository = git.getRepository()) {
             LOGGER.info("Get All Commits");
-            commits = getAllCommits(repository, git);
-            LOGGER.info("Commits list size: {}", commits.size());
+            commits = getAllCommits(repository, git, versions);
         }
 
         LOGGER.info("Retrieve Tickets from Jira");
@@ -101,11 +93,14 @@ public class DatasetGenerator {
         LOGGER.info("Ticket list new size: {}", tickets.size());
 
         LOGGER.info("Remove invalid and newer versions");
-        removeInvalidVersions(versions, projName);
+        removeInvalidVersions(versions);
         LOGGER.info("Version list size: {}", versions.size());
 
+        for (Version version : versions)
+            LOGGER.info("Version {} Commits list size: {}", version.getName(), version.getCommits().size());
+
         LOGGER.info("Get all file instance for every version");
-        List<Features> featuresList = getAllFeatures(projName, git, versions, tickets, commits);
+        List<Features> featuresList = getAllFeatures(projName, git, versions, tickets);
         LOGGER.info("Features list size: {}", featuresList.size());
 
         LOGGER.info("Create walk-forward dataset files");
@@ -115,7 +110,7 @@ public class DatasetGenerator {
             Path path = Paths.get(dirPath);
             Files.createDirectories(path);
         } catch (IOException e) {
-            e.printStackTrace();
+            LOGGER.error(e.getMessage());
             return;
         }
 
@@ -125,7 +120,7 @@ public class DatasetGenerator {
             try {
                 FileUtils.deleteDirectory(repo);
             } catch (IOException e) {
-                e.printStackTrace();
+                LOGGER.warn(e.getMessage());
             }
         }
 
@@ -153,7 +148,6 @@ public class DatasetGenerator {
 
         String header = "Version,Filename,LOC,LOC_touched,NR,NFix,NAuth,LOC_added,MAX_LOC_added,AVG_LOC_added," +
                 "Churn,MAX_Churn,AVG_Churn,ChgSetSize,MAX_ChgSet,AVG_ChgSet,Buggy\n";
-
 
 
         for (int i = 0; i < versions.size(); i++) {
@@ -223,18 +217,13 @@ public class DatasetGenerator {
         }
     }
 
-    private List<Features> getAllFeatures(String projName, Git git, List<Version> versions, List<Ticket> tickets, List<Commit> commits) {
+    private List<Features> getAllFeatures(String projName, Git git, List<Version> versions, List<Ticket> tickets) {
         List<Features> featuresList = new LinkedList<>();
-        for (int i = 0; i < versions.size(); i++) {
-            Version currVersion = versions.get(i);
-            Version prevVersion = null;
-            if (i - 1 > 0) {
-                prevVersion = versions.get(i - 1);
-            }
+        for (Version version : versions) {
             try {
-                git.checkout().setName(currVersion.getCommit()).setCreateBranch(false).call();
+                git.checkout().setName(version.getSha()).setCreateBranch(false).call();
             } catch (GitAPIException e) {
-                e.printStackTrace();
+                LOGGER.warn(e.getMessage());
                 return Collections.emptyList();
             }
             List<File> files = new ArrayList<>();
@@ -247,37 +236,45 @@ public class DatasetGenerator {
                 boolean testPath = Pattern.compile(Pattern.quote("test"),
                         Pattern.CASE_INSENSITIVE).matcher(f.getPath()).find();
                 if (!java || testName || testPath) continue;
-                featuresList.add(getFeatures(f, currVersion, prevVersion, projName, tickets, git, commits));
+                featuresList.add(getFeatures(f, version, projName, tickets, git));
             }
         }
         return featuresList;
     }
 
-    private List<Commit> getAllCommits(Repository repository, Git git) {
+    private List<Commit> getAllCommits(Repository repository, Git git, List<Version> versions) {
         List<Commit> commits = new LinkedList<>();
         RevWalk revWalk = util.getRevWalkForAllCommits(repository);
         for (RevCommit revCommit : revWalk) {
-            Commit commit = util.createCommit(revCommit, repository, git);
-            if (commit.javaFileInCommit()) commits.add(commit);
+            Commit commit = new Commit(revCommit, repository, git);
+            if (commit.javaFileInCommit()) {
+                for (Version version : versions) {
+                    try{
+                    if (commit.getDate().after(version.getPreviousVersionReleaseDate()) && commit.getDate().before(version.getReleaseDate())) {
+                        version.addCommit(commit);
+                        break;
+                    }}
+                    catch (NullPointerException e){
+                        e.printStackTrace();
+                    }
+                }
+                commits.add(commit);
+            }
         }
-        commits.sort(Comparator.comparing(Commit::getDate));
         return commits;
     }
 
-    private void removeInvalidVersions(List<Version> jiraVersions, String projName) {
-        int i = 0;
+    private void removeInvalidVersions(List<Version> jiraVersions) {
+        int i = 0, size = jiraVersions.size();
         while (i < jiraVersions.size()) {
             Version version = jiraVersions.get(i);
             //Remove invalid and most recent versions
-            if (version.getCommit() == null || version.getReleaseDate() == null ||
-                    (projName.equals("OPENJPA") && version.getReleaseDate().getTime() > 1451602800000L) ||
-                    (projName.equals("BOOKKEEPER") && version.getIncremental() > 7)) {
+            if (version.getSha() == null || version.getReleaseDate() == null || i >= ((size / 2) - 1)) {
                 jiraVersions.remove(i);
             } else {
                 i++;
             }
         }
-
     }
 
     private void removeTicketsWithoutCommits(List<Ticket> tickets) {
@@ -290,7 +287,7 @@ public class DatasetGenerator {
             try {
                 FileUtils.deleteDirectory(repo);
             } catch (IOException e) {
-                e.printStackTrace();
+                LOGGER.error(e.getMessage());
                 return null;
             }
         }
@@ -302,44 +299,16 @@ public class DatasetGenerator {
         try {
             git = Git.cloneRepository().setURI("https://github.com/apache/" + projName.toLowerCase() + ".git").call();
         } catch (GitAPIException e) {
-            e.printStackTrace();
+            LOGGER.error(e.getMessage());
             return null;
         }
         return git;
     }
 
-    private List<Tag> getGitHubTags(String projName) {
-        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'");
-        List<Tag> gitHubVersions = new ArrayList<>();
-
-        JSONArray githubTags = util.readJsonArrayFromUrl(
-                "https://api.github.com/repos/apache/"
-                        + projName.toLowerCase() +
-                        "/git/refs/tags", true);
-
-        for (int i = 0; i < githubTags.length(); i++) {
-            JSONObject tagRef = githubTags.getJSONObject(i).getJSONObject("object");
-            JSONObject tagJson = util.readJsonFromUrl(
-                    "https://api.github.com/repos/apache/" +
-                            projName.toLowerCase() +
-                            "/git/tags/" + tagRef.get("sha"), true);
-            try {
-                Tag tag = new Tag((String) tagJson.get("tag"), (String) tagJson.getJSONObject("object").get("sha"));
-                tag.setDate(sdf.parse(tagJson.getJSONObject("tagger").get("date").toString()));
-                gitHubVersions.add(tag);
-            } catch (JSONException | ParseException e) {
-                LOGGER.error(tagJson.toString(4));
-                e.printStackTrace();
-            }
-        }
-        return gitHubVersions;
-    }
-
     private List<Version> getJiraVersions(String projName) {
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd");
         JSONObject jiraVersionsJson = util.readJsonFromUrl(
-                "https://issues.apache.org/jira/rest/api/2/project/" +
-                        projName + "/version", false);
+                "https://issues.apache.org/jira/rest/api/2/project/" + projName + "/version");
         JSONArray jiraVersionsArray = jiraVersionsJson.optJSONArray("values");
         List<Version> jiraVersions = new ArrayList<>();
         for (int i = 0; i < jiraVersionsArray.length(); i++) {
@@ -355,6 +324,11 @@ public class DatasetGenerator {
             }
             Version version = new Version(id, i, name, released, releaseDate);
             jiraVersions.add(version);
+            if (i - 1 >= 0)
+                version.setPreviousVersionReleaseDate(jiraVersions.get(i - 1).getReleaseDate());
+            else {
+                version.setPreviousVersionReleaseDate(new GregorianCalendar(1900, Calendar.JANUARY, 1).getTime());
+            }
         }
         return jiraVersions;
     }
@@ -369,11 +343,13 @@ public class DatasetGenerator {
         do {
             //Only gets a max of 1000 at a time, so must do this multiple times if bugs >1000
             j = i + 1000;
-            String url = "https://issues.apache.org/jira/rest/api/2/search?jql=project=%22"
-                    + projName + "%22AND%22issueType%22=%22Bug%22AND(%22status%22=%22closed%22OR"
-                    + "%22status%22=%22resolved%22)AND%22resolution%22=%22fixed%22&fields=" +
-                    "key,resolutiondate,versions,created&startAt=" + i + "&maxResults=" + j;
-            JSONObject json = util.readJsonFromUrl(url, false);
+            String url = "https://issues.apache.org/jira/rest/api/2/search?jql=project=%22" + projName +
+                    "%22AND%22issueType%22=%22Bug%22AND" +
+                    "%28%22resolution%22%3D%22fixed%22OR%22resolution%22%3D%22done%22%29AND" +
+                    "%28%22status%22%3D%22closed%22OR%22status%22%3D%22resolved%22OR%22status%22%3D%22done%22%29" +
+                    "AND%22resolution%22=%22fixed%22&fields=" + "key,resolutiondate,versions,created&startAt=" + i
+                    + "&maxResults=" + j;
+            JSONObject json = util.readJsonFromUrl(url);
             JSONArray issues = json.getJSONArray("issues");
             total = json.getInt("total");
             for (; i < total && i < j; i++) {
@@ -386,10 +362,10 @@ public class DatasetGenerator {
                     ticket.setCreated(sdf.parse(ticketFields.get("created").toString()));
                     ticket.setResolved(sdf.parse(ticketFields.get("resolutiondate").toString()));
                 } catch (ParseException e) {
-                    e.printStackTrace();
+                    LOGGER.warn(e.getMessage());
                 }
                 url = "https://issues.apache.org/jira/rest/api/2/issue/" + ticket.getKey();
-                JSONObject issue = util.readJsonFromUrl(url, false);
+                JSONObject issue = util.readJsonFromUrl(url);
                 JSONObject issueFields = (JSONObject) issue.get("fields");
                 List<Version> fixedVersions = getVersionsList(issueFields, "fixVersions", jiraVersions);
                 List<Version> affectedVersions = getVersionsList(issueFields, "versions", jiraVersions);
@@ -397,7 +373,8 @@ public class DatasetGenerator {
                 ticket.setFixedVersions(fixedVersions);
                 ticket.setAffectedVersions(affectedVersions);
                 ticket.setOpeningVersion(jiraVersions);
-                if (ticket.getFixedVersions().isEmpty() || ticket.getOpeningVersion() == null) continue;
+                if (ticket.getFixedVersions().isEmpty() || ticket.getOpeningVersion() == null)
+                    continue;
                 tickets.add(ticket);
             }
         } while (i < total);
@@ -417,19 +394,28 @@ public class DatasetGenerator {
         }
     }
 
+    private void getReleaseCommit(List<Version> jiraVersions, Git git) {
+        List<Ref> refs;
+        try {
+            refs = git.tagList().call();
+        } catch (GitAPIException e) {
+            LOGGER.error(e.getMessage());
+            return;
+        }
 
-    private void getReleaseCommit(List<Version> jiraVersions, List<Tag> gitHubTags, Git git) {
         for (Version version : jiraVersions) {
-            //Get release commit and missing release date  in gitHubTags
-            for (Tag tag : gitHubTags) {
-                if (version.getName().equals(tag.getName()) || tag.getName().contains(version.getName())) {
-                    version.setCommit(tag.getSha());
-                    version.setReleaseDate(tag.getDate());
+            for (Ref ref : refs) {
+                if (ref != null && ref.toString().contains(version.getName())) {
+                    ObjectId objId = new ObjectId(0, 0, 0, 0, 0);
+                    try {
+                        objId = ref.getObjectId();
+                        if (objId == null) continue;
+                    } catch (NullPointerException e) {
+                        LOGGER.warn(e.getMessage());
+                    }
+                    version.setSha(objId.getName());
                 }
             }
-
-            if (version.getCommit() == null)
-                findVersionInRepoLog(version, git);
         }
     }
 
@@ -490,62 +476,33 @@ public class DatasetGenerator {
         return versions;
     }
 
-    //Get release commit on repo
-    private void findVersionInRepoLog(Version version, Git git) {
-        Iterable<RevCommit> commits;
-        try {
-            commits = git.log().call();
-            for (RevCommit commit : commits) {
-                Map<ObjectId, String> namedCommits = git.nameRev().addPrefix("refs/tags/").add(commit).call();
-                if (namedCommits.containsKey(commit.getId()) &&
-                        namedCommits.get(commit.getId()).contains(version.getName())) {
-                    version.setCommit(commit.getName());
-                    if (version.getReleaseDate() == null)
-                        version.setReleaseDate(Date.from(Instant.ofEpochSecond(commit.getCommitTime())));
-                }
-                if (namedCommits.size() > 0 && version.getName().compareTo(namedCommits.get(commit.getId())) < 0) break;
-            }
-        } catch (GitAPIException | MissingObjectException e) {
-            e.printStackTrace();
-        }
-    }
-
-    private Features getFeatures(File f, Version currVersion, Version prevVersion,
-                                 String projName, List<Ticket> tickets, Git git, List<Commit> commits) {
-        Features features = new Features(currVersion.getIncremental(), f.getPath());
+    private Features getFeatures(File f, Version version, String projName, List<Ticket> tickets, Git git) {
+        Features features = new Features(version.getIncremental(), f.getPath());
         features.setLoc(f);
         String path = f.getPath().substring(f.getPath().indexOf(projName.toLowerCase()) + projName.length() + 1);
-        long currVersionReleaseDate = currVersion.getReleaseDate().getTime();
-        if (prevVersion == null) {
-            calculateFeaturesByCommits(features, git, commits, path, currVersionReleaseDate, 0L);
-        } else {
-            long prevVersionReleaseDate = prevVersion.getReleaseDate().getTime();
-            calculateFeaturesByCommits(features, git, commits, path, currVersionReleaseDate, prevVersionReleaseDate);
-        }
-        features.setFixes(currVersion, tickets, path);
-        features.setBuggy(currVersion, tickets, path);
+        calculateFeaturesByCommits(features, git, version.getCommits(), path);
+        features.setFixes(version, tickets, path);
+        features.setBuggy(version, tickets, path);
         return features;
     }
 
-    public void calculateFeaturesByCommits(Features features, Git git, List<Commit> commits, String path, Long currVersionReleaseDate, Long prevVersionReleaseDate) {
+    public void calculateFeaturesByCommits(Features features, Git git, List<Commit> commits, String path) {
         Set<PersonIdent> authorsList = new HashSet<>();
 
         for (Commit commit : commits) {
-            if (commit.getDate().getTime() > currVersionReleaseDate) break;
             boolean isFileInCommit = commit.isFileInCommit(path);
             if (isFileInCommit) authorsList.add(commit.getAuthor());
-            if (isFileInCommit && prevVersionReleaseDate < commit.getDate().getTime()) {
-                int[] stats = getCommitStats(git, commit, path);
-                features.addLocTouched(stats[1]);
-                features.addLocTouched(stats[2]);
-                features.addLocAdded(stats[1]);
-                features.addChurn(stats[1] - stats[2]);
-                features.incrementRevisions();
-                features.addChgSetSize(stats[0]);
-                features.setMaxChgSet(stats[0]);
-                features.setMaxLocAdded(stats[1]);
-                features.setMaxChurn(stats[1] - stats[2]);
-            }
+            int[] stats = getCommitStats(git, commit, path);
+            features.addLocTouched(stats[1]);
+            features.addLocTouched(stats[2]);
+            features.addLocAdded(stats[1]);
+            features.addChurn(stats[1] - stats[2]);
+            features.incrementRevisions();
+            features.addChgSetSize(stats[0]);
+            features.setMaxChgSet(stats[0]);
+            features.setMaxLocAdded(stats[1]);
+            features.setMaxChurn(stats[1] - stats[2]);
+
         }
 
         features.setAuthors(authorsList.size());
@@ -562,15 +519,18 @@ public class DatasetGenerator {
         int currLocDeleted = 0;
         try (Repository repository = git.getRepository()) {
             RevCommit currCommit = util.getRevCommit(commit.getSha(), repository);
-            RevCommit parent = util.getParent(currCommit, repository);
+            RevCommit parent = currCommit.getParent(0);
             DiffFormatter df = new DiffFormatter(DisabledOutputStream.INSTANCE);
             df.setRepository(repository);
             df.setDiffComparator(RawTextComparator.DEFAULT);
-            df.setDetectRenames(true);
+            //df.setDetectRenames(true);
             List<DiffEntry> diffs;
-            diffs = df.scan(parent.getTree(), currCommit.getTree());
-            filesChanged = diffs.size();
+            //diffs = df.scan(parent.getTree(), currCommit.getTree());
+            diffs = df.scan(parent, currCommit);
+            //filesChanged = diffs.size();
             for (DiffEntry diff : diffs) {
+                if (diff.getNewPath().endsWith(".java") && !diff.getNewPath().contains("tests"))
+                    filesChanged++;
                 if (diff.getNewPath().equals(path) || diff.getOldPath().equals(path)) {
                     for (Edit edit : df.toFileHeader(diff).toEditList()) {
                         currLocAdded += edit.getEndB() - edit.getBeginB();
@@ -579,9 +539,8 @@ public class DatasetGenerator {
                 }
             }
         } catch (IOException e) {
-            e.printStackTrace();
+            LOGGER.warn(e.getMessage());
         }
         return new int[]{filesChanged, currLocAdded, currLocDeleted};
     }
-
 }

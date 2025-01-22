@@ -53,19 +53,39 @@ public class Features {
     //Count physical LOC (no comments/blanks)
     public void setLoc(File f) {
         this.loc = 0;
+        boolean inBlockComment = false;
         try (BufferedReader reader = new BufferedReader(new FileReader(f))) {
-            String line = reader.readLine();
-            while (line != null) {
-                line = line.replaceAll("\\s+", "");
-                if ("".equals(line) ||
-                        line.startsWith("/*") ||
-                        line.startsWith("*") ||
-                        line.startsWith("//")) {
-                    line = reader.readLine();
+            String line;
+
+            while ((line = reader.readLine()) != null) {
+                String trimmedLine = line.trim();
+
+                // Skip blank lines
+                if (trimmedLine.isEmpty()) {
                     continue;
                 }
-                line = reader.readLine();
-                this.loc++;
+
+                // Handle block comments
+                if (inBlockComment) {
+                    if (trimmedLine.contains("*/")) {
+                        inBlockComment = false;
+                    }
+                    continue;
+                }
+
+                // Start of a block comment
+                if (trimmedLine.startsWith("/*")) {
+                    inBlockComment = true;
+                    continue;
+                }
+
+                // Skip single-line comments
+                if (trimmedLine.startsWith("//")) {
+                    continue;
+                }
+
+                // Count valid code lines
+                loc++;
             }
         } catch (IOException e) {
             e.printStackTrace();

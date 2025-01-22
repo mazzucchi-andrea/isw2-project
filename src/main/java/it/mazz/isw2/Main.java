@@ -8,19 +8,17 @@ public class Main {
     private static final Logger LOGGER = LogManager.getLogger(Main.class);
 
     public static void main(String[] args) {
-        if (args.length < 2) {
-            LOGGER.error("project, username and token are mandatory");
+        if (args.length < 1) {
+            LOGGER.error("project is mandatory");
             return;
         }
         String projName = args[0];
-        String username = args[1];
-        String token = args[2];
         try {
-            String skipDatasetGeneration = args[3];
+            String skipDatasetGeneration = args[1];
             if (!skipDatasetGeneration.equals("-skip"))
-                DatasetGenerator.getInstance().generateDataset(projName, username, token);
+                DatasetGenerator.getInstance().generateDataset(projName);
         } catch (ArrayIndexOutOfBoundsException ignore) {
-            DatasetGenerator.getInstance().generateDataset(projName, username, token);
+            DatasetGenerator.getInstance().generateDataset(projName);
         }
 
         Analysis.getInstance().analyzeDataset(projName);
