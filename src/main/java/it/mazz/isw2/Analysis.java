@@ -62,7 +62,7 @@ public class Analysis {
         List<String> testPaths = new ArrayList<>();
 
         List<File> files = new LinkedList<>();
-        util.listFiles("./output/" + projName + "-datasets", files);
+        util.listFiles("./output/" + projName + "/" + projName + "-datasets", files);
 
         for (File file : files) {
             if (file.getPath().contains("test")) {
@@ -91,7 +91,7 @@ public class Analysis {
             return;
         }
 
-        File analysisResults = new File("./output/" + projName + "-results.csv");
+        File analysisResults = new File(String.format("./output/%s/%s-results.csv", projName, projName));
         String header = "dataset,#TrainingRelease,%Training,%DefectiveTraining,%DefectiveTesting,classifier," +
                 "balancing,FeatureSelection,Sensitivity,TP,FP,TN,FN,Precision,Recall,AUC,Kappa\n";
 
@@ -150,7 +150,7 @@ public class Analysis {
                 }
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            LOGGER.warn(e.getMessage());
         }
     }
 
@@ -181,7 +181,7 @@ public class Analysis {
 
             int numTraining = training.numInstances();
             int numTesting = testing.numInstances();
-            double percTraining = (double) numTraining / (double) (numTesting + numTraining);
+            double percTraining = (double) numTraining / (double) (numTesting + numTraining) * 100;
 
             if (Objects.equals(specs[1], BEST_FIRST)) {
                 Filter bf = new BestFirstFilter().getFilter();
@@ -202,8 +202,8 @@ public class Analysis {
                     Integer.toString(i),
                     Double.toString(percTraining), Double.toString(percDefectiveTraining), Double.toString(percDefectiveTesting),
                     specs[0], specs[2], specs[1], specs[3],
-                    Double.toString(eval.weightedTruePositiveRate()), Double.toString(eval.weightedFalsePositiveRate()),
-                    Double.toString(eval.weightedTrueNegativeRate()), Double.toString(eval.weightedFalseNegativeRate()),
+                    Double.toString(eval.numTruePositives(1)), Double.toString(eval.numFalsePositives(1)),
+                    Double.toString(eval.numTrueNegatives(1)), Double.toString(eval.numFalseNegatives(1)),
                     Double.toString(eval.precision(1)), Double.toString(eval.recall(1)),
                     Double.toString(eval.areaUnderROC(1)), Double.toString(eval.kappa())};
 
@@ -214,8 +214,8 @@ public class Analysis {
     private CostMatrix createCostMatrix() {
         CostMatrix costMatrix = new CostMatrix(2);
         costMatrix.setCell(0, 0, 0.0);
-        costMatrix.setCell(1, 0, CFP);
         costMatrix.setCell(0, 1, CFN);
+        costMatrix.setCell(1, 0, CFP);
         costMatrix.setCell(1, 1, 0.0);
         return costMatrix;
     }

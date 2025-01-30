@@ -1,33 +1,23 @@
 package it.mazz.isw2.entities;
 
 import java.util.Date;
-import java.util.LinkedList;
-import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 
 public class Version {
-    List<Commit> commits = new LinkedList<>();
+    private final Date releaseDate;
+    Map<String, Commit> commits;
     private Integer incremental;
-    private Integer id;
     private String name;
     private boolean released;
-    private Date releaseDate;
     private String sha;
-    private Date previousVersionReleaseDate;
 
-    public Version(Integer id, Integer incremental, String name, boolean released, Date releaseDate) {
-        this.id = id;
-        this.incremental = incremental;
+    public Version(Integer incremental, String name, boolean released, Date releaseDate) {
+        this.incremental = incremental + 1;
         this.name = name;
         this.released = released;
         this.releaseDate = releaseDate;
-    }
-
-    public Integer getId() {
-        return id;
-    }
-
-    public void setId(Integer id) {
-        this.id = id;
+        commits = new HashMap<>();
     }
 
     public Integer getIncremental() {
@@ -58,20 +48,8 @@ public class Version {
         return releaseDate;
     }
 
-    public void setReleaseDate(Date releaseDate) {
-        this.releaseDate = releaseDate;
-    }
-
-    public Date getPreviousVersionReleaseDate() {
-        return previousVersionReleaseDate;
-    }
-
-    public void setPreviousVersionReleaseDate(Date previousVersionReleaseDate) {
-        this.previousVersionReleaseDate = previousVersionReleaseDate;
-    }
-
     public void addCommit(Commit commit) {
-        commits.add(commit);
+        commits.put(commit.getSha(), commit);
     }
 
     public String getSha() {
@@ -82,7 +60,11 @@ public class Version {
         this.sha = sha;
     }
 
-    public List<Commit> getCommits() {
+    public Map<String, Commit> getCommits() {
         return commits;
+    }
+
+    public boolean containsCommit(Commit commit) {
+        return commits.get(commit.getSha()) != null;
     }
 }

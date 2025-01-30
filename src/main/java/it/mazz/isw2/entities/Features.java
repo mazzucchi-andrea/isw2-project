@@ -1,14 +1,17 @@
 package it.mazz.isw2.entities;
 
-import java.io.BufferedReader;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.File;
-import java.io.FileReader;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 public class Features {
+    private static final Logger LOGGER = LoggerFactory.getLogger(Features.class);
     private final Integer version;
-
     private final String filename;
     private Integer loc;
     private Integer locTouched;
@@ -50,57 +53,24 @@ public class Features {
         return version;
     }
 
-    //Count physical LOC (no comments/blanks)
     public void setLoc(File f) {
-        this.loc = 0;
-        boolean inBlockComment = false;
-        try (BufferedReader reader = new BufferedReader(new FileReader(f))) {
-            String line;
-
-            while ((line = reader.readLine()) != null) {
-                String trimmedLine = line.trim();
-
-                // Skip blank lines
-                if (trimmedLine.isEmpty()) {
-                    continue;
-                }
-
-                // Handle block comments
-                if (inBlockComment) {
-                    if (trimmedLine.contains("*/")) {
-                        inBlockComment = false;
-                    }
-                    continue;
-                }
-
-                // Start of a block comment
-                if (trimmedLine.startsWith("/*")) {
-                    inBlockComment = true;
-                    continue;
-                }
-
-                // Skip single-line comments
-                if (trimmedLine.startsWith("//")) {
-                    continue;
-                }
-
-                // Count valid code lines
-                loc++;
-            }
+        List<String> fileStream;
+        try {
+            fileStream = Files.readAllLines(Path.of(f.getPath()));
         } catch (IOException e) {
-            e.printStackTrace();
+            LOGGER.error(e.getMessage());
             this.loc = 0;
+            return;
         }
+        this.loc = fileStream.size();
     }
 
     public void setFixes(Version version, List<Ticket> tickets, String path) {
         int count = 0;
         for (Ticket ticket : tickets) {
-            for (Version fixedVersion : ticket.getFixedVersions()) {
-                if (version.getIncremental() <= fixedVersion.getIncremental()) {
-                    for (Commit commit : ticket.getCommits()) {
-                        if (commit.isFileInCommit(path)) count++;
-                    }
+            if (version.getIncremental() <= ticket.getFixedVersion().getIncremental()) {
+                for (Commit commit : ticket.getCommits()) {
+                    if (commit.isFileInCommit(path)) count++;
                 }
             }
         }

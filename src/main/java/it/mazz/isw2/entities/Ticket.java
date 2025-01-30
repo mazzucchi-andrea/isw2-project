@@ -5,14 +5,14 @@ import java.util.LinkedList;
 import java.util.List;
 
 public class Ticket {
+    private final List<Commit> commits = new LinkedList<>();
     private String key;
     private Version openingVersion;
-    private List<Version> affectedVersions;
-    private List<Version> fixedVersions;
+    private List<Version> affectedVersions = new LinkedList<>();
+    private Version fixedVersion;
     private Version injectedVersion;
     private Date created;
     private Date resolved;
-    private List<Commit> commits = new LinkedList<>();
 
     public String getKey() {
         return key;
@@ -50,6 +50,10 @@ public class Ticket {
         }
     }
 
+    public void setOpeningVersion(Version openingVersion) {
+        this.openingVersion = openingVersion;
+    }
+
     public List<Version> getAffectedVersions() {
         return affectedVersions;
     }
@@ -58,12 +62,12 @@ public class Ticket {
         this.affectedVersions = affectedVersions;
     }
 
-    public List<Version> getFixedVersions() {
-        return fixedVersions;
+    public Version getFixedVersion() {
+        return fixedVersion;
     }
 
-    public void setFixedVersions(List<Version> fixedVersions) {
-        this.fixedVersions = fixedVersions;
+    public void setFixedVersion(Version fixedVersion) {
+        this.fixedVersion = fixedVersion;
     }
 
     public Version getInjectedVersion() {
@@ -94,10 +98,6 @@ public class Ticket {
         return commits;
     }
 
-    public void setCommits(List<Commit> commits) {
-        this.commits = commits;
-    }
-
     public void addCommit(Commit commit) {
         this.commits.add(commit);
     }
@@ -105,14 +105,18 @@ public class Ticket {
     public boolean consistencyCheckAffectedVersion() {
         if (affectedVersions.isEmpty()) {
             return false;
-        } else if (fixedVersions.isEmpty()) {
+        } else if (fixedVersion == null) {
             return false;
         } else
-            return affectedVersions.get(affectedVersions.size() - 1).getIncremental() <= fixedVersions.get(0).getIncremental();
+            return affectedVersions.get(affectedVersions.size() - 1).getIncremental() <= fixedVersion.getIncremental();
     }
 
     public void addAffectedVersions(Version version) {
         this.affectedVersions.add(version);
+    }
+
+    public void addAffectedVersions(List<Version> version) {
+        this.affectedVersions.addAll(version);
     }
 
 }
