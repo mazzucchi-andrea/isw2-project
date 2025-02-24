@@ -98,6 +98,10 @@ public class DatasetGenerator {
         removeTicketsWithoutCommits(tickets);
         LOGGER.info("Ticket list new size: {}", tickets.size());
 
+        LOGGER.info("Get all file instance for every version");
+        List<Features> featuresList = getAllFeatures(projName, git, VersionsHandler.getVersions(), tickets);
+        LOGGER.info("Features list size: {}", featuresList.size());
+
         LOGGER.info("Remove newer versions");
         VersionsHandler.removeHalfVersions();
         LOGGER.info("Version list size: {}", VersionsHandler.getListSize());
@@ -105,10 +109,6 @@ public class DatasetGenerator {
         for (Version version : VersionsHandler.getVersions()) {
             LOGGER.info("Version {} Commits list size: {}", version.getName(), version.getCommits().size());
         }
-
-        LOGGER.info("Get all file instance for every version");
-        List<Features> featuresList = getAllFeatures(projName, git, VersionsHandler.getVersions(), tickets);
-        LOGGER.info("Features list size: {}", featuresList.size());
 
         LOGGER.info("Create walk-forward dataset files");
         String dirPath = String.format("./output/%s/%s-datasets/", projName, projName);
@@ -242,7 +242,9 @@ public class DatasetGenerator {
                         Pattern.CASE_INSENSITIVE).matcher(f.getName()).find();
                 boolean testPath = Pattern.compile(Pattern.quote("test"),
                         Pattern.CASE_INSENSITIVE).matcher(f.getPath()).find();
-                if (!java || testName || testPath) continue;
+                boolean exampleName = Pattern.compile(Pattern.quote("example"),
+                        Pattern.CASE_INSENSITIVE).matcher(f.getPath()).find();
+                if (!java || testName || testPath || exampleName) continue;
                 featuresList.add(getFeatures(f, version, projName, tickets, git));
             }
         }
@@ -386,7 +388,6 @@ public class DatasetGenerator {
         int i = 0;
         int n = 0;
         float p = 0F;
-        // create a proportional list using all the complete tickets
         while (i < tickets.size()) {
             Ticket t = tickets.get(i);
             if (t.consistencyCheckAffectedVersion()) {
@@ -399,7 +400,8 @@ public class DatasetGenerator {
                     n++;
                 }
             } else {
-                if (p == 0) {
+                t.setAffectedVersions(new ArrayList<>());
+                if (p == 0) { // use SIMPLE to set the injected version if Proportion is not initialized
                     t.addAffectedVersions(VersionsHandler.getVersionBetween(t.getOpeningVersion().getIncremental(), t.getFixedVersion().getIncremental()));
                     if (t.getOpeningVersion().getIncremental() < t.getFixedVersion().getIncremental()) {
                         t.addAffectedVersions(t.getOpeningVersion());
@@ -414,12 +416,12 @@ public class DatasetGenerator {
     }
 
     private void calculateInjectedVersion(Ticket t, Float p, int n, List<Version> jiraVersions) {
-        Float fv = Float.valueOf(t.getFixedVersion().getIncremental());
-        Float ov = Float.valueOf(t.getOpeningVersion().getIncremental());
-        Integer iv = Math.round(fv - (fv - ov) * (p / n));
+        float fv = t.getFixedVersion().getIncremental();
+        float ov = t.getOpeningVersion().getIncremental();
+        int iv = (int) (fv - (fv - ov) * (p / n));
         t.setAffectedVersions(new LinkedList<>());
         for (Version version : jiraVersions) {
-            if (version.getIncremental() <= t.getOpeningVersion().getIncremental() && version.getIncremental() >= iv)
+            if (version.getIncremental() <= t.getFixedVersion().getIncremental() && version.getIncremental() >= iv)
                 t.addAffectedVersions(version);
             if (version.getIncremental().equals(iv)) {
                 t.setInjectedVersion(version);
